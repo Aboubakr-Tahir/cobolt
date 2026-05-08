@@ -36,13 +36,13 @@ class HouseValidator:
         # Tolérance epsilon pour ignorer les contacts de bords (float precision limit)
         gap = EPSILON_COLLISION
         
-        # Pas de collision si l'un est entièrement à l'extérieur de l'autre:
-        if (x1 + w1 - gap <= x2 or x2 + w2 - gap <= x1 or 
-            z1 + d1 - gap <= z2 or z2 + d2 - gap <= z1):
-            return False  # Libre
-        
-        log_debug("COLLISION", f"Overlap détecté! {r1['id']}(x:{x1:.2f}, z:{z1:.2f}, w:{w1:.2f}, d:{d1:.2f}) vs {r2['id']}(x:{x2:.2f}, z:{z2:.2f}, w:{w2:.2f}, d:{d2:.2f})")
-        return True  # Collision !
+        # Collision ssi intersection stricte (admet le contact parfait des murs)
+        if (x1 < x2 + w2 - gap and x1 + w1 > x2 + gap and 
+            z1 < z2 + d2 - gap and z1 + d1 > z2 + gap):
+            log_debug("COLLISION", f"Overlap détecté! {r1['id']}(x:{x1:.2f}, z:{z1:.2f}, w:{w1:.2f}, d:{d1:.2f}) vs {r2['id']}(x:{x2:.2f}, z:{z2:.2f}, w:{w2:.2f}, d:{d2:.2f})")
+            return True  # Collision !
+            
+        return False  # Libre
     
     def validate_surface(self, rooms: List[Dict]) -> bool:
         """Vérifie que la surface utilisée ne dépasse pas le total."""
@@ -59,13 +59,13 @@ class HouseValidator:
             self.errors.append("Pas de couloir trouvé")
             return False
         
-        # Pour cette version: simplementation basique
-        # Chaque pièce doit être adjacent au couloir ou à une autre pièce
+        # Chaque pièce (sauf la première) doit avoir au moins une porte/adjacence
         for room in rooms:
             if room["type"] == "couloir":
                 continue
-            if not room["metadata"]["adjacent_to"]:
-                self.warnings.append(f"{room['id']} n'a pas d'adjacence")
+            if not room.get("doors") and not room["metadata"].get("adjacent_to"):
+                self.errors.append(f"{room['id']} n'a pas d'accès (aucune porte/adjacence)")
+                return False
         
         return True
     

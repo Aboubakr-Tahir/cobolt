@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from config import log_debug, DEFAULT_HEIGHT, WALL_THICKNESS, DOOR_WIDTH, WINDOW_WIDTH, get_room_zone
 from database import rooms_collection, house_collection, clean_doc, clear_database
-from spatial import GridMap, RoomPlacement, generate_walls
+from spatial import GridMap, RoomPlacement, generate_walls, calculate_door_position
 from validator import HouseValidator, score_layout
 
 # ==========================================
@@ -160,15 +160,20 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
     
     # Générer portes et fenêtres pour cette pièce
     if adjacent_rooms:
-        new_room["doors"] = [
-            {
+        new_room["doors"] = []
+        for adj in adjacent_rooms:
+            adj_room = next((r for r in existing if r["id"] == adj), None)
+            door_pos = {"x": 0.0, "z": 0.0}
+            if adj_room:
+                door_pos = calculate_door_position(new_room, adj_room)
+                
+            new_room["doors"].append({
                 "id": f"door_{room_id}_to_{adj}",
                 "connected_to": adj,
                 "width": DOOR_WIDTH,
-                "type": "internal_door"
-            }
-            for adj in adjacent_rooms
-        ]
+                "type": "internal_door",
+                "position": door_pos
+            })
     
     if room_type == "chambre":
         new_room["windows"] = [

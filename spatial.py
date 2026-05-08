@@ -1,5 +1,5 @@
 from typing import List, Dict, Tuple, Set
-from config import (GRID_SIZE, MIN_ROOM_GAP, ROOM_RATIOS, MIN_ROOM_SIZES, MAX_ROOM_SIZES, 
+from config import (GRID_SIZE, MIN_ROOM_GAP, EPSILON_COLLISION, ROOM_RATIOS, MIN_ROOM_SIZES, MAX_ROOM_SIZES, 
                     DEFAULT_HEIGHT, DOOR_WIDTH, WINDOW_WIDTH, WALL_THICKNESS, log_debug)
 
 # ==========================================
@@ -31,7 +31,7 @@ class GridMap:
     def reserve_cells(self, x: float, z: float, width: float, depth: float) -> bool:
         """Réserve les cellules pour une pièce."""
         gx1, gz1 = self.world_to_grid(x, z)
-        gx2, gz2 = self.world_to_grid(x + width, z + depth)
+        gx2, gz2 = self.world_to_grid(x + width - EPSILON_COLLISION, z + depth - EPSILON_COLLISION)
         
         cells_to_reserve = []
         for gx in range(gx1, gx2 + 1):
@@ -50,7 +50,7 @@ class GridMap:
     def is_area_free(self, x: float, z: float, width: float, depth: float) -> bool:
         """Vérifie si une zone est libre."""
         gx1, gz1 = self.world_to_grid(x, z)
-        gx2, gz2 = self.world_to_grid(x + width, z + depth)
+        gx2, gz2 = self.world_to_grid(x + width - EPSILON_COLLISION, z + depth - EPSILON_COLLISION)
         
         for gx in range(gx1, gx2 + 1):
             for gz in range(gz1, gz2 + 1):
@@ -89,55 +89,33 @@ class RoomPlacement:
     
     @staticmethod
     def find_position(room_type: str, dims: Dict, existing_rooms: List[Dict], grid: GridMap) -> Tuple[float, float]:
-        """Place la pièce intelligemment selon le type."""
-        hallway = next((r for r in existing_rooms if r["type"] == "couloir"), None)
-        if not hallway:
-            log_debug("PLACEMENT", "❌ Pas de couloir trouvé")
+        """Place la pièce organiquement contre les pièces existantes."""
+        if not existing_rooms:
             return 0.0, 0.0
-        
-        hx, hz = hallway["position"]["x"], hallway["position"]["z"]
-        hw, hd = hallway["dimensions"]["width"], hallway["dimensions"]["depth"]
+            
         w, d = dims["width"], dims["depth"]
+        gap = MIN_ROOM_GAP
         
-        # S'assurer de laisser de l'espace pour l'épaisseur des murs
-        gap = max(MIN_ROOM_GAP, WALL_THICKNESS)
+        # Prioriser le couloir, puis les pièces publiques, puis les privées
+        sorted_rooms = sorted(existing_rooms, key=lambda r: 0 if r["type"] == "couloir" else (1 if r.get("zone") == "public" else 2))
         
-        log_debug("PLACEMENT", f"Placement de {room_type} ({w}x{d}m) près couloir ({hx},{hz})")
+        log_debug("PLACEMENT", f"Placement {room_type} ({w}x{d}m) - Organique")
         
-        # CAS 1 : Chambre, salle de bain, cuisine → placer à gauche/droite du couloir
-        if room_type in ["chambre", "salle de bain", "cuisine"]:
-            for side in ["gauche", "droite"]:
-                tx = (hx - w - gap) if side == "gauche" else (hx + hw + gap)
-                tz = hz
-                
-                # Balayer verticalement le long du couloir
-                max_tz = hz + hd + 5.0
-                attempts = 0
-                while tz <= max_tz and attempts < 20:
-                    if grid.is_area_free(tx, tz, w, d):
-                        if grid.reserve_cells(tx, tz, w, d):
-                            log_debug("PLACEMENT", f"✅ {room_type} placé à {side}: ({tx:.2f}, {tz:.2f})")
-                            return tx, tz
-                    tz += GRID_SIZE
-                    attempts += 1
-        
-        # CAS 2 : Salon → derrière le couloir, centré
-        elif room_type == "salon":
-            tx = hx + (hw / 2) - (w / 2)
-            tz = hz + hd + gap
-            if grid.is_area_free(tx, tz, w, d):
-                if grid.reserve_cells(tx, tz, w, d):
-                    log_debug("PLACEMENT", f"✅ Salon placé: ({tx:.2f}, {tz:.2f})")
-                    return tx, tz
-        
-        # CAS 3 : Hall_nuit → entre couloir et chambres
-        elif room_type == "hall_nuit":
-            tx = hx + (hw / 2) - (w / 2)
-            tz = hz + hd + gap
-            if grid.is_area_free(tx, tz, w, d):
-                if grid.reserve_cells(tx, tz, w, d):
-                    log_debug("PLACEMENT", f"✅ Hall nuit placé: ({tx:.2f}, {tz:.2f})")
-                    return tx, tz
+        for anchor in sorted_rooms:
+            rx, rz = anchor["position"]["x"], anchor["position"]["z"]
+            rw, rd = anchor["dimensions"]["width"], anchor["dimensions"]["depth"]
+            
+            candidates = [
+                (rx + rw/2 - w/2, rz + rd + gap), # Nord
+                (rx + rw/2 - w/2, rz - d - gap),  # Sud
+                (rx + rw + gap, rz + rd/2 - d/2), # Est
+                (rx - w - gap, rz + rd/2 - d/2),  # Ouest
+            ]
+            for tx, tz in candidates:
+                if grid.is_area_free(tx, tz, w, d):
+                    if grid.reserve_cells(tx, tz, w, d):
+                        log_debug("PLACEMENT", f"✅ {room_type} placé près de {anchor['id']}: ({tx:.2f}, {tz:.2f})")
+                        return tx, tz
         
         # FALLBACK : Chercher une zone libre n'importe où
         log_debug("PLACEMENT", f"⚠️ Fallback recherche pour {room_type}")
@@ -174,6 +152,25 @@ class RoomPlacement:
                     adjacent.append(r["id"])
         
         return adjacent
+
+def calculate_door_position(new_room: Dict, adj_room: Dict) -> Dict:
+    """Calcule le point central exact du mur partagé pour y placer une porte."""
+    x1, z1 = new_room["position"]["x"], new_room["position"]["z"]
+    w1, d1 = new_room["dimensions"]["width"], new_room["dimensions"]["depth"]
+    x2, z2 = adj_room["position"]["x"], adj_room["position"]["z"]
+    w2, d2 = adj_room["dimensions"]["width"], adj_room["dimensions"]["depth"]
+    
+    ix_min = max(x1, x2)
+    ix_max = min(x1 + w1, x2 + w2)
+    iz_min = max(z1, z2)
+    iz_max = min(z1 + d1, z2 + d2)
+    
+    if ix_max > ix_min:  # Chevauchement horizontal (faces nord/sud connectées)
+        return {"x": float((ix_min + ix_max) / 2), "z": float(max(z1, z2))}
+    if iz_max > iz_min:  # Chevauchement vertical (faces est/ouest connectées)
+        return {"x": float(max(x1, x2)), "z": float((iz_min + iz_max) / 2)}
+        
+    return {"x": float(x1), "z": float(z1)}
 
 def generate_doors(rooms: List[Dict]) -> Dict[str, List[Dict]]:
     """Génère les portes entre pièces adjacentes."""
