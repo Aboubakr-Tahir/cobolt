@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional
 from config import log_debug, DEFAULT_HEIGHT, WALL_THICKNESS, DOOR_WIDTH, WINDOW_WIDTH, get_room_zone
-from database import rooms_collection, house_collection, clean_doc
+from database import rooms_collection, house_collection, clean_doc, clear_database
 from spatial import GridMap, RoomPlacement, generate_walls
 from validator import HouseValidator, score_layout
 
@@ -19,8 +19,7 @@ def initialiser_maison(surface_totale: float) -> str:
     if rooms_collection is None or house_collection is None:
         return json.dumps({"status": "error", "message": "MongoDB non connecté"})
     
-    rooms_collection.delete_many({})
-    house_collection.delete_many({})
+    clear_database()
     
     log_debug("INIT", f"Création maison {surface_totale}m²")
     

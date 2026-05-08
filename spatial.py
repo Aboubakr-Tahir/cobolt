@@ -99,12 +99,15 @@ class RoomPlacement:
         hw, hd = hallway["dimensions"]["width"], hallway["dimensions"]["depth"]
         w, d = dims["width"], dims["depth"]
         
+        # S'assurer de laisser de l'espace pour l'épaisseur des murs
+        gap = max(MIN_ROOM_GAP, WALL_THICKNESS)
+        
         log_debug("PLACEMENT", f"Placement de {room_type} ({w}x{d}m) près couloir ({hx},{hz})")
         
         # CAS 1 : Chambre, salle de bain, cuisine → placer à gauche/droite du couloir
         if room_type in ["chambre", "salle de bain", "cuisine"]:
             for side in ["gauche", "droite"]:
-                tx = (hx - w - MIN_ROOM_GAP) if side == "gauche" else (hx + hw + MIN_ROOM_GAP)
+                tx = (hx - w - gap) if side == "gauche" else (hx + hw + gap)
                 tz = hz
                 
                 # Balayer verticalement le long du couloir
@@ -121,7 +124,7 @@ class RoomPlacement:
         # CAS 2 : Salon → derrière le couloir, centré
         elif room_type == "salon":
             tx = hx + (hw / 2) - (w / 2)
-            tz = hz + hd + MIN_ROOM_GAP
+            tz = hz + hd + gap
             if grid.is_area_free(tx, tz, w, d):
                 if grid.reserve_cells(tx, tz, w, d):
                     log_debug("PLACEMENT", f"✅ Salon placé: ({tx:.2f}, {tz:.2f})")
@@ -130,7 +133,7 @@ class RoomPlacement:
         # CAS 3 : Hall_nuit → entre couloir et chambres
         elif room_type == "hall_nuit":
             tx = hx + (hw / 2) - (w / 2)
-            tz = hz + hd + MIN_ROOM_GAP
+            tz = hz + hd + gap
             if grid.is_area_free(tx, tz, w, d):
                 if grid.reserve_cells(tx, tz, w, d):
                     log_debug("PLACEMENT", f"✅ Hall nuit placé: ({tx:.2f}, {tz:.2f})")

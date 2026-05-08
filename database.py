@@ -17,6 +17,12 @@ except Exception as e:
     rooms_collection = None
     house_collection = None
 
+def clear_database():
+    """Vide les collections rooms et houses."""
+    if rooms_collection is not None and house_collection is not None:
+        rooms_collection.delete_many({})
+        house_collection.delete_many({})
+
 def clean_doc(doc: Optional[Dict]) -> Dict:
     """Nettoie un document MongoDB."""
     if doc is None:

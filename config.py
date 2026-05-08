@@ -17,7 +17,7 @@ def log_debug(category: str, message: str):
 # 1. CONSTANTES GLOBALES
 # ==========================================
 GRID_SIZE = 0.5
-MIN_ROOM_GAP = 0.2
+MIN_ROOM_GAP = 0.05
 WALL_THICKNESS = 0.15
 EPSILON_COLLISION = 0.01
 DEFAULT_HEIGHT = 3.0

@@ -26,20 +26,22 @@ class HouseValidator:
         return True
     
     def _aabb_collision(self, r1: Dict, r2: Dict) -> bool:
-        """Détecte collision AABB avec marge de sécurité."""
+        """Détecte collision AABB (chevauchement réel physique sans marge de conception)."""
         x1, z1 = r1["position"]["x"], r1["position"]["z"]
         w1, d1 = r1["dimensions"]["width"], r1["dimensions"]["depth"]
         
         x2, z2 = r2["position"]["x"], r2["position"]["z"]
         w2, d2 = r2["dimensions"]["width"], r2["dimensions"]["depth"]
         
-        gap = MIN_ROOM_GAP + EPSILON_COLLISION
+        # Tolérance epsilon pour ignorer les contacts de bords (float precision limit)
+        gap = EPSILON_COLLISION
         
-        # Pas de collision si:
-        if (x1 + w1 + gap <= x2 or x2 + w2 + gap <= x1 or 
-            z1 + d1 + gap <= z2 or z2 + d2 + gap <= z1):
+        # Pas de collision si l'un est entièrement à l'extérieur de l'autre:
+        if (x1 + w1 - gap <= x2 or x2 + w2 - gap <= x1 or 
+            z1 + d1 - gap <= z2 or z2 + d2 - gap <= z1):
             return False  # Libre
         
+        log_debug("COLLISION", f"Overlap détecté! {r1['id']}(x:{x1:.2f}, z:{z1:.2f}, w:{w1:.2f}, d:{d1:.2f}) vs {r2['id']}(x:{x2:.2f}, z:{z2:.2f}, w:{w2:.2f}, d:{d2:.2f})")
         return True  # Collision !
     
     def validate_surface(self, rooms: List[Dict]) -> bool:
