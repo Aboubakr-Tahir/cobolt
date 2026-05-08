@@ -187,18 +187,134 @@ def generate_doors(rooms: List[Dict]) -> Dict[str, List[Dict]]:
     return doors
 
 def generate_windows(rooms: List[Dict]) -> Dict[str, List[Dict]]:
-    """Génère les fenêtres (surtout pour chambres)."""
+    """Génère les fenêtres sur les murs extérieurs uniquement."""
     windows = {}
+    
     for room in rooms:
         windows[room["id"]] = []
-        if room["type"] == "chambre":
-            # Au moins 1 fenêtre pour les chambres
+        
+        # Déterminer les murs extérieurs (non adjacents)
+        rx = room["position"]["x"]
+        rz = room["position"]["z"]
+        rw = room["dimensions"]["width"]
+        rd = room["dimensions"]["depth"]
+        rh = room["dimensions"]["height"]
+        
+        # Trouver les murs adjacents
+        north_adjacent = False
+        south_adjacent = False
+        east_adjacent = False
+        west_adjacent = False
+        
+        for other in rooms:
+            if other["id"] == room["id"]:
+                continue
+            
+            ox = other["position"]["x"]
+            oz = other["position"]["z"]
+            ow = other["dimensions"]["width"]
+            od = other["dimensions"]["depth"]
+            
+            eps = 0.1
+            
+            # Vérifier si c'est adjacent au nord
+            if abs(rz + rd - oz) <= eps:
+                ix0 = max(rx, ox)
+                ix1 = min(rx + rw, ox + ow)
+                if ix1 - ix0 > 0.5:
+                    north_adjacent = True
+            
+            # Vérifier si c'est adjacent au sud
+            if abs(oz + od - rz) <= eps:
+                ix0 = max(rx, ox)
+                ix1 = min(rx + rw, ox + ow)
+                if ix1 - ix0 > 0.5:
+                    south_adjacent = True
+            
+            # Vérifier si c'est adjacent à l'est
+            if abs(rx + rw - ox) <= eps:
+                iz0 = max(rz, oz)
+                iz1 = min(rz + rd, oz + od)
+                if iz1 - iz0 > 0.5:
+                    east_adjacent = True
+            
+            # Vérifier si c'est adjacent à l'ouest
+            if abs(ox + ow - rx) <= eps:
+                iz0 = max(rz, oz)
+                iz1 = min(rz + rd, oz + od)
+                if iz1 - iz0 > 0.5:
+                    west_adjacent = True
+        
+        # Placer les fenêtres sur les murs extérieurs
+        window_count = 1
+        
+        # Nord (extérieur)
+        if not north_adjacent and rd > 2.0:
+            window_pos = {
+                "x": float(rx + rw / 2.0),
+                "y": float(rh / 2.0 + 0.5),
+                "z": float(rz + rd)
+            }
             windows[room["id"]].append({
-                "id": f"window_{room['id']}_1",
+                "id": f"window_{room['id']}_{window_count}",
                 "width": WINDOW_WIDTH,
-                "position": "north_wall",
+                "height": 1.2,
+                "position": window_pos,
+                "wall": "north",
                 "type": "double_window"
             })
+            window_count += 1
+        
+        # Sud (extérieur)
+        if not south_adjacent and rd > 2.0:
+            window_pos = {
+                "x": float(rx + rw / 2.0),
+                "y": float(rh / 2.0 + 0.5),
+                "z": float(rz)
+            }
+            windows[room["id"]].append({
+                "id": f"window_{room['id']}_{window_count}",
+                "width": WINDOW_WIDTH,
+                "height": 1.2,
+                "position": window_pos,
+                "wall": "south",
+                "type": "double_window"
+            })
+            window_count += 1
+        
+        # Est (extérieur)
+        if not east_adjacent and rw > 2.0:
+            window_pos = {
+                "x": float(rx + rw),
+                "y": float(rh / 2.0 + 0.5),
+                "z": float(rz + rd / 2.0)
+            }
+            windows[room["id"]].append({
+                "id": f"window_{room['id']}_{window_count}",
+                "width": WINDOW_WIDTH,
+                "height": 1.2,
+                "position": window_pos,
+                "wall": "east",
+                "type": "double_window"
+            })
+            window_count += 1
+        
+        # Ouest (extérieur)
+        if not west_adjacent and rw > 2.0:
+            window_pos = {
+                "x": float(rx),
+                "y": float(rh / 2.0 + 0.5),
+                "z": float(rz + rd / 2.0)
+            }
+            windows[room["id"]].append({
+                "id": f"window_{room['id']}_{window_count}",
+                "width": WINDOW_WIDTH,
+                "height": 1.2,
+                "position": window_pos,
+                "wall": "west",
+                "type": "double_window"
+            })
+    
     return windows
 
 def generate_walls(room: Dict, existing_rooms: List[Dict]) -> List[Dict]:

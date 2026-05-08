@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 from config import log_debug, DEFAULT_HEIGHT, WALL_THICKNESS, DOOR_WIDTH, WINDOW_WIDTH, get_room_zone
 from database import rooms_collection, house_collection, clean_doc, clear_database
-from spatial import GridMap, RoomPlacement, generate_walls, calculate_door_position
+from spatial import GridMap, RoomPlacement, generate_walls, calculate_door_position, generate_windows
 from validator import HouseValidator, score_layout
 
 # ==========================================
@@ -203,6 +203,30 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
     # Insérer en DB
     try:
         rooms_collection.insert_one(new_room)
+
+        # Ajouter la porte réciproque dans les pièces adjacentes déjà existantes.
+        for adj in adjacent_rooms:
+            adj_room = next((r for r in existing if r["id"] == adj), None)
+            if not adj_room:
+                continue
+
+            reciprocal_pos = calculate_door_position(adj_room, new_room)
+            reciprocal_door = {
+                "id": f"door_{adj}_to_{room_id}",
+                "connected_to": room_id,
+                "width": DOOR_WIDTH,
+                "type": "internal_door",
+                "position": reciprocal_pos
+            }
+
+            rooms_collection.update_one(
+                {"id": adj},
+                {
+                    "$push": {"doors": reciprocal_door},
+                    "$set": {"metadata.has_door": True}
+                }
+            )
+
         house_collection.update_one(
             {"house_id": house["house_id"]},
             {
@@ -217,6 +241,16 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
     except Exception as e:
         log_debug("ERROR", f"Erreur DB: {str(e)}")
         return json.dumps({"status": "error", "message": f"Erreur DB: {str(e)}"})
+    
+    # Générer et mettre à jour les fenêtres pour toutes les pièces
+    updated_rooms = [clean_doc(r) for r in rooms_collection.find({}, projection={"_id": 0})]
+    windows_dict = generate_windows(updated_rooms)
+    
+    for room_id, room_windows in windows_dict.items():
+        rooms_collection.update_one(
+            {"id": room_id},
+            {"$set": {"windows": room_windows}}
+        )
     
     # Récupérer état final
     updated_rooms = [clean_doc(r) for r in rooms_collection.find({}, projection={"_id": 0})]
@@ -235,6 +269,8 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
             "visual": room["visual"],
             "zone": room.get("zone", "unknown"),
             "metadata": room["metadata"],
+            "doors": room.get("doors", []),
+            "windows": room.get("windows", []),
             "num_doors": len(room.get("doors", [])),
             "num_windows": len(room.get("windows", [])),
             "num_walls": len(room.get("walls", []))
