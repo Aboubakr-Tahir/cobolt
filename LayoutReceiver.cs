@@ -585,12 +585,10 @@ public class LayoutReceiver : MonoBehaviour
             // Create a simple door frame (left jamb, right jamb, lintel) for visual clarity
             float jambThickness = 0.06f;
             float jambDepth = Mathf.Max(0.02f, scale.z * 0.6f);
-            float lintelHeight = 0.06f;
-            // Limite: jambes + lintel doivent rester sous le plafond
-            float jambHeight = Mathf.Min(scale.y * 0.85f, 2.0f);
-            // S'assurer que lintel + jamb ne dépassent pas scale.y
-            float maxJambHeight = scale.y - lintelHeight - 0.05f;
-            jambHeight = Mathf.Min(jambHeight, maxJambHeight);
+            // Pour obtenir une porte affleurante au plafond, on retire le lintel visible
+            float lintelHeight = 0.0f; // pas de lintel visible
+            // jambHeight remplit presque toute la hauteur du mur (petit jeu pour éviter z-fighting)
+            float jambHeight = Mathf.Max(0.01f, scale.y - 0.02f);
 
             // Left jamb - position depuis le sol local (Y = -scale.y/2)
             Vector3 leftJambPos = pos + new Vector3(holeLeft - (jambThickness / 2.0f), -scale.y / 2.0f + jambHeight / 2.0f, 0);
@@ -612,15 +610,18 @@ public class LayoutReceiver : MonoBehaviour
             rj.transform.localScale = new Vector3(jambThickness, jambHeight, jambDepth);
             rj.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
 
-            // Lintel (top) - positionné juste au-dessus des jambes
-            Vector3 lintelPos = pos + new Vector3(doorCenterLocal, -scale.y / 2.0f + jambHeight + lintelHeight / 2.0f, 0);
-            GameObject lintel = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            lintel.name = name + "_Lintel";
-            DestroyImmediate(lintel.GetComponent<Collider>());
-            lintel.transform.parent = parent.transform;
-            lintel.transform.localPosition = lintelPos;
-            lintel.transform.localScale = new Vector3(doorWidth + jambThickness * 2.0f, lintelHeight, jambDepth);
-            lintel.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
+            // Pas de lintel visible (ou très fin si lintelHeight > 0)
+            if (lintelHeight > 0.001f)
+            {
+                Vector3 lintelPos = pos + new Vector3(doorCenterLocal, -scale.y / 2.0f + jambHeight + lintelHeight / 2.0f, 0);
+                GameObject lintel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                lintel.name = name + "_Lintel";
+                DestroyImmediate(lintel.GetComponent<Collider>());
+                lintel.transform.parent = parent.transform;
+                lintel.transform.localPosition = lintelPos;
+                lintel.transform.localScale = new Vector3(doorWidth + jambThickness * 2.0f, lintelHeight, jambDepth);
+                lintel.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
+            }
         }
         else
         {
@@ -647,12 +648,9 @@ public class LayoutReceiver : MonoBehaviour
             // Door frame
             float jambThickness = 0.06f;
             float jambDepth = Mathf.Max(0.02f, scale.x * 0.6f);
-            float lintelHeight = 0.06f;
-            // Limite: jambes + lintel doivent rester sous le plafond
-            float jambHeight = Mathf.Min(scale.y * 0.85f, 2.0f);
-            // S'assurer que lintel + jamb ne dépassent pas scale.y
-            float maxJambHeight = scale.y - lintelHeight - 0.05f;
-            jambHeight = Mathf.Min(jambHeight, maxJambHeight);
+            // Suppression du lintel visible pour avoir une ouverture de porte jusqu'au plafond
+            float lintelHeight = 0.0f;
+            float jambHeight = Mathf.Max(0.01f, scale.y - 0.02f);
 
             // Left jamb (closer to negative Z) - position depuis le sol local (Y = -scale.y/2)
             Vector3 leftJambPos = pos + new Vector3(0, -scale.y / 2.0f + jambHeight / 2.0f, holeLeft - (jambThickness / 2.0f));
@@ -674,15 +672,18 @@ public class LayoutReceiver : MonoBehaviour
             rj.transform.localScale = new Vector3(jambDepth, jambHeight, jambThickness);
             rj.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
 
-            // Lintel - positionné juste au-dessus des jambes
-            Vector3 lintelPos = pos + new Vector3(0, -scale.y / 2.0f + jambHeight + lintelHeight / 2.0f, doorCenterLocal);
-            GameObject lintel = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            lintel.name = name + "_Lintel";
-            DestroyImmediate(lintel.GetComponent<Collider>());
-            lintel.transform.parent = parent.transform;
-            lintel.transform.localPosition = lintelPos;
-            lintel.transform.localScale = new Vector3(jambDepth, lintelHeight, doorWidth + jambThickness * 2.0f);
-            lintel.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
+            // Pas de lintel visible (ou très fin si lintelHeight > 0)
+            if (lintelHeight > 0.001f)
+            {
+                Vector3 lintelPos = pos + new Vector3(0, -scale.y / 2.0f + jambHeight + lintelHeight / 2.0f, doorCenterLocal);
+                GameObject lintel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                lintel.name = name + "_Lintel";
+                DestroyImmediate(lintel.GetComponent<Collider>());
+                lintel.transform.parent = parent.transform;
+                lintel.transform.localPosition = lintelPos;
+                lintel.transform.localScale = new Vector3(jambDepth, lintelHeight, doorWidth + jambThickness * 2.0f);
+                lintel.GetComponent<Renderer>().material.color = new Color(0.55f, 0.33f, 0.07f);
+            }
         }
     }
 
