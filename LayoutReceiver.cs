@@ -246,9 +246,34 @@ public class LayoutReceiver : MonoBehaviour
         if (westDoor) CreateWallWithDoor(roomObj, "Wall_W", new Vector3(-w/2, h/2, 0), new Vector3(wallThickness, h, d), false);
         else CreateWall(roomObj, "Wall_W", new Vector3(-w/2, h/2, 0), new Vector3(wallThickness, h, d));
 
+        // Ajout du toit
+        CreateRoof(room, roomObj);
+
         spawnedRooms[room.id] = roomObj;
     }
     
+    void CreateRoof(RoomDto room, GameObject roomContainer)
+    {
+        GameObject roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        roof.name = "Roof";
+        roof.transform.parent = roomContainer.transform;
+        
+        float h = room.dimensions.height;
+        float w = room.dimensions.width;
+        float d = room.dimensions.depth;
+        float thickness = 0.1f;
+        
+        // Placé exactement au sommet des murs (Y = height)
+        roof.transform.localPosition = new Vector3(0, h, 0);
+        roof.transform.localScale = new Vector3(w, thickness, d);
+        
+        Renderer rend = roof.GetComponent<Renderer>();
+        if (rend != null)
+        {
+            rend.material.color = new Color(0.85f, 0.85f, 0.85f); // Blanc cassé / Gris très clair
+        }
+    }
+
     void CreateWall(GameObject parent, string name, Vector3 pos, Vector3 scale)
     {
         GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
