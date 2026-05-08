@@ -43,14 +43,22 @@ def initialiser_maison(surface_totale: float) -> str:
         "metadata": {
             "surface": round(hw * hd, 2),
             "adjacent_to": [],
-            "has_door": False,
+            "has_door": True,
             "privacy_level": 0,
             "natural_light": 0,
             "circulation_score": 100,
             "architectural_score": 0,
             "zone": "circulation"
         },
-        "doors": [],
+        "doors": [
+            {
+                "id": "door_couloir_1_to_outside",
+                "connected_to": "outside",
+                "width": DOOR_WIDTH,
+                "type": "entry_door",
+                "position": {"x": float(hw / 2.0), "z": 0.0}
+            }
+        ],
         "windows": [],
         "walls": generate_walls({"id": "couloir_1", "position": {"x": 0.0, "z": 0.0},
                                 "dimensions": {"width": hw, "depth": hd}}, [])
@@ -85,7 +93,7 @@ def initialiser_maison(surface_totale: float) -> str:
         }
     }, ensure_ascii=False)
 
-def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
+def ajouter_piece_unity(room_type: str, label: Optional[str] = None, placement_hint: Optional[str] = None, connect_to: Optional[str] = None) -> str:
     """Ajoute une pièce avec validation complète."""
     if rooms_collection is None or house_collection is None:
         return json.dumps({"status": "error", "message": "MongoDB non connecté"})
@@ -104,10 +112,16 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
         x, z = room["position"]["x"], room["position"]["z"]
         w, d = room["dimensions"]["width"], room["dimensions"]["depth"]
         grid.reserve_cells(x, z, w, d)
+        # Reserve door coordinates so future placements don't overlap doors
+        for door in room.get("doors", []):
+            dp = door.get("position")
+            if isinstance(dp, dict) and "x" in dp and "z" in dp:
+                grid.reserve_point(dp["x"], dp["z"])
     
     # Calculer dimensions
     dims = RoomPlacement.get_dynamic_dimensions(room_type, house["surface_totale"])
-    tx, tz = RoomPlacement.find_position(room_type, dims, existing, grid)
+    strict_flag = bool(placement_hint or connect_to)
+    tx, tz = RoomPlacement.find_position(room_type, dims, existing, grid, placement_hint or "", connect_to=connect_to, strict=strict_flag)
     
     count = len([r for r in existing if r["type"] == room_type]) + 1
     room_id = f"{room_type}_{count}"
@@ -123,6 +137,52 @@ def ajouter_piece_unity(room_type: str, label: Optional[str] = None) -> str:
     adjacent_rooms = RoomPlacement.find_adjacent_rooms(tx, tz, dims["width"], dims["depth"], existing)
     if not adjacent_rooms:
         adjacent_rooms = ["couloir_1"]
+
+    # Idempotency: if the user asked to connect to a specific room and such a
+    # room already exists connected to that target, do not create a duplicate.
+    if connect_to:
+        exists_connected = next((r for r in existing if r.get("type") == room_type and any(d.get("connected_to") == connect_to for d in r.get("doors", []))), None)
+        if exists_connected:
+            log_debug("ROOM_ADD", f"⚠️ Request ignored — a {room_type} already connected to {connect_to} ({exists_connected['id']})")
+            # Return current layout without creating a new room
+            updated_rooms = [clean_doc(r) for r in rooms_collection.find({}, projection={"_id": 0})]
+            layout_score = score_layout(updated_rooms)
+            lightweight_rooms = []
+            for room in updated_rooms:
+                lightweight_room = {
+                    "id": room["id"],
+                    "type": room["type"],
+                    "label": room["label"],
+                    "position": room["position"],
+                    "dimensions": room["dimensions"],
+                    "visual": room["visual"],
+                    "zone": room.get("zone", "unknown"),
+                    "metadata": room.get("metadata", {}),
+                    "doors": room.get("doors", []),
+                    "windows": room.get("windows", []),
+                    "num_doors": len(room.get("doors", [])),
+                    "num_windows": len(room.get("windows", [])),
+                    "num_walls": len(room.get("walls", []))
+                }
+                lightweight_rooms.append(lightweight_room)
+
+            return json.dumps({
+                "status": "success",
+                "action": "add_room",
+                "house_id": house["house_id"],
+                "timestamp": datetime.now().isoformat(),
+                "rooms": lightweight_rooms,
+                "metadata": {
+                    "surface_totale": house["surface_totale"],
+                    "surface_utilisee": round(house.get("surface_utilisee", 0), 2),
+                    "unite": "meters",
+                    "layout_valid": True,
+                    "validation_errors": [],
+                    "layout_score": round(layout_score, 1),
+                    "orientation": house.get("orientation", "north"),
+                    "style": house.get("style", "modern")
+                }
+            }, ensure_ascii=False)
     
     # Créer la pièce
     new_room = {

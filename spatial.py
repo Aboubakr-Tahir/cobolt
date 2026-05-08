@@ -1,3 +1,5 @@
+import math
+import unicodedata
 from typing import List, Dict, Tuple, Set
 from config import (GRID_SIZE, MIN_ROOM_GAP, EPSILON_COLLISION, ROOM_RATIOS, MIN_ROOM_SIZES, MAX_ROOM_SIZES, 
                     DEFAULT_HEIGHT, DOOR_WIDTH, WINDOW_WIDTH, WALL_THICKNESS, log_debug)
@@ -18,9 +20,14 @@ class GridMap:
     
     def world_to_grid(self, x: float, z: float) -> Tuple[int, int]:
         """Convertit coordonnées monde en coordonnées grille."""
-        gx = int(x / GRID_SIZE)
-        gz = int(z / GRID_SIZE)
+        gx = math.floor(x / GRID_SIZE)
+        gz = math.floor(z / GRID_SIZE)
         return (gx, gz)
+
+    def reserve_point(self, x: float, z: float) -> None:
+        """Réserve la cellule contenant le point (x,z) pour empêcher les placements dessus."""
+        gx, gz = self.world_to_grid(x, z)
+        self.occupied_cells.add((gx, gz))
     
     def grid_to_world(self, gx: int, gz: int) -> Tuple[float, float]:
         """Convertit coordonnées grille en coordonnées monde."""
@@ -60,6 +67,33 @@ class GridMap:
 
 class RoomPlacement:
     """Placement intelligent des pièces avec grille."""
+
+    @staticmethod
+    def _normalize_placement_hint(placement_hint: str) -> str:
+        if not placement_hint:
+            return ""
+
+        hint = unicodedata.normalize("NFKD", placement_hint.lower().strip())
+        hint = "".join(ch for ch in hint if not unicodedata.combining(ch))
+
+        if any(token in hint for token in ["droite", "right"]):
+            return "east"
+        if any(token in hint for token in ["gauche", "left"]):
+            return "west"
+        if any(token in hint for token in ["devant", "avant", "front"]):
+            return "north"
+        if any(token in hint for token in ["derriere", "arriere", "back", "behind"]):
+            return "south"
+        if "north" in hint:
+            return "north"
+        if "south" in hint:
+            return "south"
+        if "east" in hint:
+            return "east"
+        if "west" in hint:
+            return "west"
+
+        return ""
     
     @staticmethod
     def get_dynamic_dimensions(room_type: str, total_surface: float) -> Dict:
@@ -88,30 +122,50 @@ class RoomPlacement:
         }
     
     @staticmethod
-    def find_position(room_type: str, dims: Dict, existing_rooms: List[Dict], grid: GridMap) -> Tuple[float, float]:
+    def find_position(room_type: str, dims: Dict, existing_rooms: List[Dict], grid: GridMap, placement_hint: str = "", connect_to: str = None, strict: bool = False) -> Tuple[float, float]:
         """Place la pièce organiquement contre les pièces existantes."""
         if not existing_rooms:
             return 0.0, 0.0
             
         w, d = dims["width"], dims["depth"]
         gap = MIN_ROOM_GAP
+        preferred_side = RoomPlacement._normalize_placement_hint(placement_hint)
         
         # Prioriser le couloir, puis les pièces publiques, puis les privées
         sorted_rooms = sorted(existing_rooms, key=lambda r: 0 if r["type"] == "couloir" else (1 if r.get("zone") == "public" else 2))
         
         log_debug("PLACEMENT", f"Placement {room_type} ({w}x{d}m) - Organique")
+
+        def build_candidates(rx: float, rz: float, rw: float, rd: float):
+            base = [
+                ("north", rx + rw / 2 - w / 2, rz + rd + gap),
+                ("south", rx + rw / 2 - w / 2, rz - d - gap),
+                ("east", rx + rw + gap, rz + rd / 2 - d / 2),
+                ("west", rx - w - gap, rz + rd / 2 - d / 2),
+            ]
+
+            if preferred_side:
+                if strict:
+                    return [c for c in base if c[0] == preferred_side]
+                ordered = [c for c in base if c[0] == preferred_side]
+                ordered.extend(c for c in base if c[0] != preferred_side)
+                return ordered
+
+            return base
         
-        for anchor in sorted_rooms:
+        # If connect_to is specified, only try that anchor (strict adjacency)
+        anchors_to_try = sorted_rooms
+        if connect_to:
+            anchors_to_try = [r for r in sorted_rooms if r["id"] == connect_to]
+            if not anchors_to_try:
+                log_debug("PLACEMENT", f"⚠️ connect_to '{connect_to}' introuvable, fallback normal")
+                anchors_to_try = sorted_rooms
+
+        for anchor in anchors_to_try:
             rx, rz = anchor["position"]["x"], anchor["position"]["z"]
             rw, rd = anchor["dimensions"]["width"], anchor["dimensions"]["depth"]
             
-            candidates = [
-                (rx + rw/2 - w/2, rz + rd + gap), # Nord
-                (rx + rw/2 - w/2, rz - d - gap),  # Sud
-                (rx + rw + gap, rz + rd/2 - d/2), # Est
-                (rx - w - gap, rz + rd/2 - d/2),  # Ouest
-            ]
-            for tx, tz in candidates:
+            for _, tx, tz in build_candidates(rx, rz, rw, rd):
                 if grid.is_area_free(tx, tz, w, d):
                     if grid.reserve_cells(tx, tz, w, d):
                         log_debug("PLACEMENT", f"✅ {room_type} placé près de {anchor['id']}: ({tx:.2f}, {tz:.2f})")
@@ -192,6 +246,10 @@ def generate_windows(rooms: List[Dict]) -> Dict[str, List[Dict]]:
     
     for room in rooms:
         windows[room["id"]] = []
+
+        # Un couloir ne doit pas recevoir de fenêtres.
+        if room.get("type") == "couloir" or room.get("zone") == "circulation":
+            continue
         
         # Déterminer les murs extérieurs (non adjacents)
         rx = room["position"]["x"]
